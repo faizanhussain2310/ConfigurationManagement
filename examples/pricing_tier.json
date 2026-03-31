@@ -1,0 +1,25 @@
+{
+  "id": "rule_pricing_tier",
+  "name": "Pricing Tier",
+  "description": "Assigns a pricing tier based on organization size. 100+ employees = enterprise, 10+ = team, otherwise starter.",
+  "type": "decision_tree",
+  "tree": {
+    "condition": {
+      "field": "org.employees",
+      "op": "gte",
+      "value": 100
+    },
+    "then": {"value": "enterprise"},
+    "else": {
+      "condition": {
+        "field": "org.employees",
+        "op": "gte",
+        "value": 10
+      },
+      "then": {"value": "team"},
+      "else": {"value": "starter"}
+    }
+  },
+  "default_value": "starter",
+  "status": "active"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "rule_dark_mode_rollout",
+  "name": "Dark Mode Rollout",
+  "description": "Gradually rolls out dark mode to 25% of users based on a percentage hash of user.id.",
+  "type": "feature_flag",
+  "tree": {
+    "condition": {
+      "field": "user.id",
+      "op": "pct",
+      "value": 25
+    },
+    "then": {"value": true},
+    "else": {"value": false}
+  },
+  "default_value": false,
+  "status": "active"
+}

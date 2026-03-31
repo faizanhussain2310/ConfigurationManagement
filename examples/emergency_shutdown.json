@@ -1,0 +1,11 @@
+{
+  "id": "rule_emergency_shutdown",
+  "name": "Emergency Shutdown",
+  "description": "Kill switch to immediately disable a service. Set the leaf value to true to activate the shutdown.",
+  "type": "kill_switch",
+  "tree": {
+    "value": false
+  },
+  "default_value": false,
+  "status": "active"
+}

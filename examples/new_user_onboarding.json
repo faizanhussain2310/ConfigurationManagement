@@ -1,0 +1,19 @@
+{
+  "id": "rule_new_user_onboarding",
+  "name": "New User Onboarding",
+  "description": "Shows onboarding flow for users who signed up within the last 7 days and are located in US, CA, GB, or AU.",
+  "type": "feature_flag",
+  "tree": {
+    "condition": {
+      "combinator": "and",
+      "conditions": [
+        {"field": "user.signup_days", "op": "lte", "value": 7},
+        {"field": "user.country", "op": "in", "value": ["US", "CA", "GB", "AU"]}
+      ]
+    },
+    "then": {"value": true},
+    "else": {"value": false}
+  },
+  "default_value": false,
+  "status": "active"
+}
