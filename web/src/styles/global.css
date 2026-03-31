@@ -356,3 +356,123 @@ input:focus, select:focus, textarea:focus {
 .import-area:hover {
   border-color: var(--accent);
 }
+
+/* --- Tree Editor (react-flow) --- */
+
+.tree-editor-container {
+  width: 100%;
+  height: 550px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  position: relative;
+}
+
+.tree-editor-hint {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.flow-node {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0;
+  min-width: 180px;
+  font-size: 12px;
+}
+
+.flow-node-header {
+  padding: 4px 10px;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.flow-condition .flow-node-header { color: var(--accent); }
+.flow-value .flow-node-header { color: var(--success); }
+.flow-combinator .flow-node-header { color: var(--warning); }
+
+.flow-node-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.flow-input {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, monospace;
+  width: 100%;
+}
+
+.flow-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.flow-select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  color: var(--text-primary);
+  font-size: 11px;
+  width: 100%;
+}
+
+.flow-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.flow-labels {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 10px 4px;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.flow-label-true { color: var(--success); }
+.flow-label-false { color: var(--danger); }
+
+/* Override react-flow styles for dark theme */
+.react-flow__controls button {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+}
+
+.react-flow__controls button:hover {
+  background: var(--bg-tertiary) !important;
+}
+
+.react-flow__edge-text {
+  font-size: 10px;
+  fill: var(--text-secondary);
+}
+
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border: 2px solid var(--bg-primary);
+}

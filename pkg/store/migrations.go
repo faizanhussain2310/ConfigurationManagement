@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS rules (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT DEFAULT '',
-    type TEXT NOT NULL CHECK (type IN ('feature_flag', 'decision_tree', 'kill_switch')),
+    type TEXT NOT NULL CHECK (type IN ('feature_flag', 'decision_tree', 'kill_switch', 'composite')),
     version INTEGER NOT NULL DEFAULT 1,
     tree TEXT NOT NULL,
     default_value TEXT,
@@ -43,4 +43,21 @@ CREATE TABLE IF NOT EXISTS eval_history (
 
 CREATE INDEX IF NOT EXISTS idx_eval_history_rule_id ON eval_history(rule_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_rule_versions_rule_id ON rule_versions(rule_id, version DESC);
+
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin', 'editor', 'viewer')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    events TEXT NOT NULL DEFAULT '*',
+    secret TEXT DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `

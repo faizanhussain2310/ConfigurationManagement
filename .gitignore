@@ -1,5 +1,5 @@
-# Binary
-arbiter
+# Binary (the compiled output, not the cmd/arbiter source)
+/arbiter
 *.exe
 
 # Database

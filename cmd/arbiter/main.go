@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/faizanhussain/arbiter/pkg/api"
+	"github.com/faizanhussain/arbiter/pkg/auth"
 	"github.com/faizanhussain/arbiter/pkg/store"
 )
 
@@ -26,6 +27,9 @@ func main() {
 		port = "8080"
 	}
 
+	// JWT secret from env or auto-generated
+	jwtSecret := os.Getenv("ARBITER_JWT_SECRET")
+
 	// Open database
 	s, err := store.New(dbPath)
 	if err != nil {
@@ -38,9 +42,17 @@ func main() {
 		log.Printf("Warning: seed failed: %v", err)
 	}
 
+	// Seed default admin user if no users exist
+	if err := s.SeedAdmin(context.Background()); err != nil {
+		log.Printf("Warning: admin seed failed: %v", err)
+	}
+
+	// Auth config
+	authCfg := auth.NewConfig(jwtSecret)
+
 	// Create router with embedded web assets
 	webFS := getWebFS()
-	router := api.NewRouter(s, webFS)
+	router := api.NewRouter(s, authCfg, webFS)
 
 	srv := &http.Server{
 		Addr:         ":" + port,
@@ -65,6 +77,7 @@ func main() {
 	if webFS != nil {
 		log.Printf("Dashboard: http://localhost:%s/", port)
 	}
+	log.Printf("Default login: admin / admin (change immediately)")
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)
 	}

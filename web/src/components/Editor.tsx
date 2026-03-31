@@ -117,6 +117,7 @@ export default function Editor({ rule, onSave, onDelete, showToast }: Props) {
               <option value="feature_flag">Feature Flag</option>
               <option value="decision_tree">Decision Tree</option>
               <option value="kill_switch">Kill Switch</option>
+              <option value="composite">Composite</option>
             </select>
           </div>
           <div className="form-group">

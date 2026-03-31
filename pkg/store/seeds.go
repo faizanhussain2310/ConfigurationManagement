@@ -8,7 +8,13 @@ import (
 	"time"
 
 	"github.com/faizanhussain/arbiter/pkg/engine"
+	"golang.org/x/crypto/bcrypt"
 )
+
+func bcryptHash(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(hash), err
+}
 
 // Seed inserts example rules on first run. Only seeds if:
 // 1. The rules table is empty
@@ -106,6 +112,29 @@ func seedRules() []*engine.Rule {
 			Status:       "active",
 		},
 	}
+}
+
+// SeedAdmin creates a default admin user if no users exist.
+// Default credentials: admin / admin
+func (s *Store) SeedAdmin(ctx context.Context) error {
+	count, err := s.UserCount(ctx)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	log.Println("Seeding default admin user (admin/admin)...")
+
+	// bcrypt hash of "admin" at cost 10
+	adminHash, hashErr := bcryptHash("admin")
+	if hashErr != nil {
+		return hashErr
+	}
+
+	_, err = s.CreateUser(ctx, "admin", adminHash, "admin")
+	return err
 }
 
 func toJSON(v any) json.RawMessage {

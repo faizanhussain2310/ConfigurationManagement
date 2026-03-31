@@ -7,14 +7,18 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/faizanhussain/arbiter/pkg/auth"
 	"github.com/faizanhussain/arbiter/pkg/engine"
 	"github.com/faizanhussain/arbiter/pkg/store"
+	"github.com/faizanhussain/arbiter/pkg/webhooks"
 	"github.com/go-chi/chi/v5"
 )
 
 // Handler holds dependencies for HTTP handlers.
 type Handler struct {
-	Store *store.Store
+	Store    *store.Store
+	Auth     *auth.Config
+	Webhooks *webhooks.Dispatcher
 }
 
 // --- JSON helpers ---
@@ -84,6 +88,10 @@ func (h *Handler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.Webhooks != nil {
+		h.Webhooks.Fire(webhooks.EventRuleCreated, rule.ID, rule)
+	}
+
 	writeJSON(w, http.StatusCreated, rule)
 }
 
@@ -151,6 +159,11 @@ func (h *Handler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	if h.Webhooks != nil {
+		h.Webhooks.Fire(webhooks.EventRuleUpdated, id, updated)
+	}
+
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -166,6 +179,11 @@ func (h *Handler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	engine.ClearRegexCache()
+
+	if h.Webhooks != nil {
+		h.Webhooks.Fire(webhooks.EventRuleDeleted, id, nil)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -192,6 +210,12 @@ func (h *Handler) EvaluateRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Context == nil {
 		body.Context = map[string]any{}
+	}
+
+	// Composite rules evaluate differently
+	if rule.Type == "composite" {
+		h.evaluateComposite(w, r, rule, body.Context)
+		return
 	}
 
 	result := engine.Evaluate(rule.Tree, body.Context, rule.ID, rule.DefaultValue)
@@ -258,6 +282,52 @@ func (h *Handler) BatchEvaluate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// evaluateComposite handles evaluation of composite rules.
+func (h *Handler) evaluateComposite(w http.ResponseWriter, r *http.Request, rule *engine.Rule, ctx map[string]any) {
+	config, err := engine.ParseComposeConfig(rule.Tree)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid composite config: "+err.Error())
+		return
+	}
+
+	// Evaluate each child rule
+	var children []engine.CompositeChild
+	for _, childID := range config.RuleIDs {
+		child, err := h.Store.GetRule(r.Context(), childID)
+		if err != nil {
+			children = append(children, engine.CompositeChild{
+				RuleID: childID,
+				Result: engine.EvalResult{Error: "child rule not found: " + childID, Path: []string{}},
+			})
+			continue
+		}
+
+		// Prevent evaluating nested composite rules (max 1 level)
+		if child.Type == "composite" {
+			children = append(children, engine.CompositeChild{
+				RuleID: childID,
+				Result: engine.EvalResult{Error: "nested composite rules not supported", Path: []string{}},
+			})
+			continue
+		}
+
+		result := engine.Evaluate(child.Tree, ctx, child.ID, child.DefaultValue)
+		children = append(children, engine.CompositeChild{
+			RuleID: childID,
+			Result: result,
+		})
+	}
+
+	combined := engine.CombineResults(config.Strategy, children)
+
+	// Store eval history asynchronously
+	ctxJSON, _ := json.Marshal(ctx)
+	resultJSON, _ := json.Marshal(combined)
+	go h.Store.InsertEvalHistory(r.Context(), rule.ID, ctxJSON, resultJSON)
+
+	writeJSON(w, http.StatusOK, combined)
 }
 
 // GetEvalHistory handles GET /api/rules/:id/history.

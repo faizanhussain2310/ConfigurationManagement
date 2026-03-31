@@ -1,11 +1,14 @@
 import { useRef } from 'react'
 import { api } from '../api/client'
+import { useAuth } from '../hooks/useAuth'
 
 interface Props {
   onImport: () => void
+  onWebhooks?: () => void
 }
 
-export default function TopBar({ onImport }: Props) {
+export default function TopBar({ onImport, onWebhooks }: Props) {
+  const { username, role, logout } = useAuth()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,6 +38,9 @@ export default function TopBar({ onImport }: Props) {
     <div className="topbar">
       <h1>Arbiter</h1>
       <div style={{ flex: 1 }} />
+      {onWebhooks && (
+        <button onClick={onWebhooks}>Webhooks</button>
+      )}
       <button onClick={() => fileRef.current?.click()}>Import Rule</button>
       <input
         ref={fileRef}
@@ -43,6 +49,10 @@ export default function TopBar({ onImport }: Props) {
         style={{ display: 'none' }}
         onChange={handleImport}
       />
+      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+        {username} <span className="badge" style={{ background: 'rgba(88,166,255,0.15)', color: 'var(--accent)' }}>{role}</span>
+      </span>
+      <button onClick={logout} style={{ fontSize: 12 }}>Logout</button>
     </div>
   )
 }

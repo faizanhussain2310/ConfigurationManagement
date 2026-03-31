@@ -398,7 +398,110 @@ All errors follow this format:
 | Status | When |
 |--------|------|
 | `400` | Invalid JSON, validation failure (bad operator, tree too deep, etc.) |
+| `401` | Missing or invalid JWT token (for protected endpoints) |
+| `403` | Insufficient role permissions |
 | `404` | Rule or version not found |
 | `409` | ID collision on create or import (import includes `existing` metadata) |
 | `413` | Request body exceeds 1MB |
 | `500` | Database or internal error |
+
+---
+
+## Authentication
+
+All write endpoints require a JWT token in the `Authorization` header.
+Read endpoints (list rules, get rule, evaluate) are public.
+
+### `POST /api/auth/login` — Get a JWT token
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
+```
+
+Response `200`:
+```json
+{"token": "eyJhbG...", "username": "admin", "role": "admin"}
+```
+
+### `GET /api/auth/me` — Current user info
+
+Requires: valid JWT.
+
+```bash
+curl http://localhost:8080/api/auth/me \
+  -H "Authorization: Bearer <token>"
+```
+
+Response `200`:
+```json
+{"username": "admin", "role": "admin"}
+```
+
+### `POST /api/auth/register` — Create a new user (admin only)
+
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Authorization: Bearer <admin-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "password": "pass123", "role": "editor"}'
+```
+
+### `GET /api/auth/users` — List users (admin only)
+
+```bash
+curl http://localhost:8080/api/auth/users \
+  -H "Authorization: Bearer <admin-token>"
+```
+
+### Role hierarchy
+
+| Role | Can read | Can create/edit/delete rules | Can manage users & webhooks |
+|------|----------|-------------------------------|------------------------------|
+| viewer | Yes | No | No |
+| editor | Yes | Yes | No |
+| admin | Yes | Yes | Yes |
+
+---
+
+## Webhooks (admin only)
+
+### `POST /api/webhooks` — Create a webhook subscription
+
+```bash
+curl -X POST http://localhost:8080/api/webhooks \
+  -H "Authorization: Bearer <admin-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/hook", "events": "*"}'
+```
+
+Events: `rule.created`, `rule.updated`, `rule.deleted`, or `*` (all).
+
+Response `201`: returns the webhook with auto-generated HMAC secret.
+
+### `GET /api/webhooks` — List webhooks
+
+### `DELETE /api/webhooks/:id` — Delete a webhook
+
+Webhook payloads are signed with HMAC-SHA256. The signature is in the `X-Arbiter-Signature` header.
+
+---
+
+## Composite Rules
+
+Composite rules combine results from multiple child rules using a strategy.
+
+Create a composite rule with `"type": "composite"` and a tree like:
+
+```json
+{
+  "strategy": "all_true",
+  "rule_ids": ["feature_a", "feature_b"]
+}
+```
+
+Strategies: `all_true`, `any_true`, `first_match`, `merge_results`.
+
+Evaluate just like any other rule: `POST /api/rules/:id/evaluate`.
+Nested composites are not allowed (max 1 level deep).

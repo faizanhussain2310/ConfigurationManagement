@@ -25,6 +25,7 @@ var validRuleTypes = map[string]bool{
 	"feature_flag":  true,
 	"decision_tree": true,
 	"kill_switch":   true,
+	"composite":     true,
 }
 
 var validStatuses = map[string]bool{
@@ -42,13 +43,18 @@ func ValidateRule(r *Rule) error {
 		return fmt.Errorf("name is required")
 	}
 	if !validRuleTypes[r.Type] {
-		return fmt.Errorf("type must be one of: feature_flag, decision_tree, kill_switch")
+		return fmt.Errorf("type must be one of: feature_flag, decision_tree, kill_switch, composite")
 	}
 	if r.Status != "" && !validStatuses[r.Status] {
 		return fmt.Errorf("status must be one of: active, draft, disabled")
 	}
 	if len(r.Tree) == 0 {
 		return fmt.Errorf("tree is required")
+	}
+
+	// Composite rules have a different tree format (ComposeConfig)
+	if r.Type == "composite" {
+		return ValidateCompositeTree(r.Tree)
 	}
 
 	var root Node

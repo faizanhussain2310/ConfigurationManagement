@@ -5,45 +5,90 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/faizanhussain/arbiter/pkg/auth"
 	"github.com/faizanhussain/arbiter/pkg/store"
+	"github.com/faizanhussain/arbiter/pkg/webhooks"
 	"github.com/go-chi/chi/v5"
 )
 
 // NewRouter creates the Chi router with all API routes and SPA fallback.
-func NewRouter(s *store.Store, webFS fs.FS) http.Handler {
-	h := &Handler{Store: s}
+func NewRouter(s *store.Store, authCfg *auth.Config, webFS fs.FS) http.Handler {
+	h := &Handler{Store: s, Auth: authCfg, Webhooks: webhooks.NewDispatcher(s)}
 	r := chi.NewRouter()
 
 	// Global middleware
 	r.Use(Logger)
 	r.Use(CORS)
 	r.Use(MaxBodySize)
+	r.Use(AuthOptional(authCfg)) // Extract JWT if present, but don't require it
 
-	// Health check
+	// Health check (public)
 	r.Get("/api/health", h.HealthCheck)
+
+	// Auth endpoints (public)
+	r.Post("/api/auth/login", h.Login)
+
+	// Auth management (requires auth)
+	r.Group(func(r chi.Router) {
+		r.Use(AuthRequired(authCfg))
+		r.Get("/api/auth/me", h.Me)
+
+		// Admin-only user management
+		r.Group(func(r chi.Router) {
+			r.Use(RequireRole("admin"))
+			r.Post("/api/auth/register", h.Register)
+			r.Get("/api/auth/users", h.ListUsers)
+		})
+	})
 
 	// IMPORTANT: register static routes before parameterized routes.
 	// Chi matches routes in order. /api/rules/import must come before
 	// /api/rules/{id} or "import" gets treated as an ID.
-	r.Post("/api/rules/import", h.ImportRule)
 
-	// Batch evaluate (static path, must be before /api/rules/{id})
+	// Import requires editor role
+	r.Group(func(r chi.Router) {
+		r.Use(AuthRequired(authCfg))
+		r.Use(RequireRole("editor"))
+		r.Post("/api/rules/import", h.ImportRule)
+	})
+
+	// Batch evaluate (public read)
 	r.Post("/api/evaluate", h.BatchEvaluate)
 
 	// Rules CRUD
-	r.Post("/api/rules", h.CreateRule)
-	r.Get("/api/rules", h.ListRules)
+	r.Get("/api/rules", h.ListRules)       // public read
+	r.Group(func(r chi.Router) {
+		r.Use(AuthRequired(authCfg))
+		r.Use(RequireRole("editor"))
+		r.Post("/api/rules", h.CreateRule) // editor+
+	})
 
 	r.Route("/api/rules/{id}", func(r chi.Router) {
+		// Read endpoints (public)
 		r.Get("/", h.GetRule)
-		r.Put("/", h.UpdateRule)
-		r.Delete("/", h.DeleteRule)
 		r.Post("/evaluate", h.EvaluateRule)
 		r.Get("/history", h.GetEvalHistory)
 		r.Get("/versions", h.ListVersions)
-		r.Post("/rollback/{version}", h.RollbackToVersion)
-		r.Post("/duplicate", h.DuplicateRule)
 		r.Get("/export", h.ExportRule)
+
+		// Write endpoints (editor+)
+		r.Group(func(r chi.Router) {
+			r.Use(AuthRequired(authCfg))
+			r.Use(RequireRole("editor"))
+			r.Put("/", h.UpdateRule)
+			r.Delete("/", h.DeleteRule)
+			r.Post("/rollback/{version}", h.RollbackToVersion)
+			r.Post("/duplicate", h.DuplicateRule)
+		})
+	})
+
+	// Webhook management (admin only)
+	r.Group(func(r chi.Router) {
+		r.Use(AuthRequired(authCfg))
+		r.Use(RequireRole("admin"))
+		r.Post("/api/webhooks", h.CreateWebhook)
+		r.Get("/api/webhooks", h.ListWebhooks)
+		r.Delete("/api/webhooks/{id}", h.DeleteWebhook)
 	})
 
 	// SPA fallback: serve static files from embedded web/dist,
