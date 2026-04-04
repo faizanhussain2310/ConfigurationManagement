@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Arbiter WASM Example</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; background: #0d1117; color: #e6edf3; }
+    h1 { font-size: 20px; }
+    textarea { width: 100%; height: 120px; background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 13px; }
+    button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin: 8px 0; }
+    button:hover { background: #2ea043; }
+    pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; overflow-x: auto; font-size: 13px; }
+    label { display: block; font-size: 12px; color: #8b949e; margin: 12px 0 4px; }
+    .status { font-size: 12px; color: #8b949e; margin: 8px 0; }
+    .elapsed { color: #3fb950; }
+  </style>
+</head>
+<body>
+  <h1>Arbiter WASM — Client-Side Rule Evaluation</h1>
+  <div class="status" id="status">Loading WASM module...</div>
+
+  <label>Decision Tree (JSON)</label>
+  <textarea id="tree">{
+  "condition": { "field": "user.age", "op": "gte", "value": 18 },
+  "then": { "value": "allowed" },
+  "else": { "value": "denied" }
+}</textarea>
+
+  <label>Context (JSON)</label>
+  <textarea id="context" style="height: 60px">{ "user": { "age": 25, "country": "US" } }</textarea>
+
+  <label>Rule ID</label>
+  <input id="ruleId" value="age-gate" style="background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 6px 8px; width: 200px;">
+
+  <br>
+  <button onclick="runEval()">Evaluate</button>
+
+  <label>Result</label>
+  <pre id="result">Click "Evaluate" to see results</pre>
+
+  <script src="wasm_exec.js"></script>
+  <script src="arbiter-loader.js"></script>
+  <script>
+    let engine = null
+
+    async function init() {
+      try {
+        engine = await loadArbiter('arbiter.wasm')
+        document.getElementById('status').innerHTML = 'WASM loaded <span class="elapsed">✓</span>'
+      } catch (e) {
+        document.getElementById('status').textContent = 'Failed to load: ' + e.message
+      }
+    }
+
+    function runEval() {
+      if (!engine) {
+        document.getElementById('result').textContent = 'WASM not loaded yet'
+        return
+      }
+      try {
+        const tree = document.getElementById('tree').value
+        const ctx = JSON.parse(document.getElementById('context').value)
+        const ruleId = document.getElementById('ruleId').value
+        const result = engine.evaluate(tree, ctx, ruleId)
+        document.getElementById('result').textContent = JSON.stringify(result, null, 2)
+      } catch (e) {
+        document.getElementById('result').textContent = 'Error: ' + e.message
+      }
+    }
+
+    init()
+  </script>
+</body>
+</html>

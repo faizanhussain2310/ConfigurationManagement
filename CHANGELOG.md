@@ -22,6 +22,13 @@ All notable changes to Arbiter are documented in this file.
 - Supports all 14 REST endpoints with typed responses
 - JWT auth token support via `WithAuth()` method
 - 17 new tests covering auth (JWT, passwords, roles), composition (all 4 strategies, cycle detection), and validation
+- **WASM Compilation**: Client-side rule evaluation via WebAssembly
+- `cmd/wasm/main.go` compiles the evaluation engine to a 3.8MB `.wasm` binary
+- JavaScript loader (`wasm/arbiter-loader.js`) with typed API: `evaluate()` and `validateRule()`
+- Example HTML page for testing WASM evaluation in browser
+- **Makefile** with targets: build, run, test, web, wasm, wasm-serve, clean
+- **Backend code reading guide** (`docs/backend-code-guide.md`) — file-by-file reading order with explanations
+- **Frontend overview** (`docs/frontend-overview.md`) — architecture, state flow, component breakdown, tradeoffs
 
 ### Changed
 - Rule type now includes 'composite' option in both backend and frontend

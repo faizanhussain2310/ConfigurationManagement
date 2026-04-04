@@ -22,5 +22,9 @@ web/node_modules/
 .DS_Store
 Thumbs.db
 
+# WASM binary (rebuilt via make wasm)
+wasm/arbiter.wasm
+wasm/wasm_exec.js
+
 # Go
 vendor/
