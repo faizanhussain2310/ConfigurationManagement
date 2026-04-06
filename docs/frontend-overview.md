@@ -9,13 +9,14 @@ main.tsx                    ← mounts React, wraps everything in AuthProvider
   └─ App.tsx                ← auth gate: shows LoginPage or Dashboard
       ├─ LoginPage.tsx      ← username/password form
       └─ Dashboard          ← main layout (sidebar + tabs + content)
-           ├─ TopBar.tsx         ← header with import, webhooks, user info, logout
-           ├─ RuleList.tsx       ← sidebar: list rules + create new
-           ├─ Editor.tsx         ← JSON editor tab (CodeMirror)
+           ├─ TopBar.tsx         ← header with env filter, import, webhooks, users, logout
+           ├─ RuleList.tsx       ← sidebar: list rules + create new (with env picker)
+           ├─ Editor.tsx         ← JSON editor tab (CodeMirror) + env + schedule fields
            ├─ TestPanel.tsx      ← evaluate rules with custom context
            ├─ TreeEditor.tsx     ← visual drag-and-drop tree (ReactFlow)
-           ├─ HistoryView.tsx    ← versions + evaluation history
+           ├─ HistoryView.tsx    ← versions (with modified_by) + evaluation history
            ├─ WebhookManager.tsx ← admin-only webhook CRUD
+           ├─ UserManager.tsx    ← admin-only user CRUD
            ├─ DiffView.tsx       ← version comparison
            └─ PathView.tsx       ← decision path visualization
 ```
@@ -26,11 +27,13 @@ There's no Redux, no Zustand, no state library. Just React hooks and prop drilli
 
 **Auth state** lives in `useAuth.tsx` (React Context). The `AuthProvider` wraps the entire app. Every component can call `useAuth()` to get `username`, `role`, `login()`, `logout()`. JWT token is stored in `localStorage` and automatically attached to every API request by `client.ts`.
 
-**Rule list** lives in `useRules.ts` hook. Called once in `Dashboard`. Returns `rules`, `loading`, `refresh()`. When you create/update/delete a rule, the parent calls `refresh()` to re-fetch the list.
+**Rule list** lives in `useRules.ts` hook. Called once in `Dashboard` with the current environment filter. Returns `rules`, `loading`, `refresh()`. When you create/update/delete a rule, the parent calls `refresh()` to re-fetch the list. Changing the environment dropdown in TopBar triggers a re-fetch automatically (the hook depends on the `environment` parameter).
 
 **Selected rule** is `useState<Rule | null>` in Dashboard. Passed down as props to Editor, TestPanel, TreeEditor, HistoryView.
 
 **Tab state** is `useState<Tab>` in Dashboard. Switches which component renders in the main area.
+
+**Admin views** are managed by `adminView` state ('webhooks' | 'users' | null). When an admin clicks "Users" or "Webhooks" in TopBar, the main area switches to that admin panel and deselects any rule.
 
 **Toast notifications** are a simple `useState` with a 3-second `setTimeout` to auto-dismiss.
 
@@ -59,27 +62,31 @@ On mount: checks if a token exists in localStorage. If yes, calls `api.me()` to 
 
 Simple form with username, password, submit button. Shows error messages inline. Displays "Default: admin / admin" hint.
 
-### `components/TopBar.tsx` — Header bar (49 lines)
+### `components/TopBar.tsx` — Header bar (~65 lines)
 
-Shows: app name, webhooks button (admin only), import button (file picker), username + role badge, logout button.
+Shows: app name, environment dropdown filter, users button (admin only), webhooks button (admin only), import button (file picker), username + role badge, logout button.
+
+The environment dropdown filters rules across the whole dashboard. Selecting "All Environments" (empty string) shows everything.
 
 The import flow: reads a `.json` file, calls `api.importRule()`. If it gets a conflict (rule already exists), asks user to confirm force-overwrite.
 
-### `components/RuleList.tsx` — Sidebar (96 lines)
+### `components/RuleList.tsx` — Sidebar (~105 lines)
 
 Two parts:
-1. **Create form** — collapsible. Generates a random UUID for the rule ID, lets you pick a name and type, then calls `api.createRule()` with a minimal tree
-2. **Rule list** — maps over `rules` array, shows name + type badge + status badge. Clicking a rule calls `onSelect(rule)`
+1. **Create form** — collapsible. Lets you pick a name, type, and environment, then calls `api.createRule()` with a minimal tree
+2. **Rule list** — maps over `rules` array, shows name + type badge + status badge + environment badge. Clicking a rule calls `onSelect(rule)`
 
 Active rule gets highlighted with a left border accent.
 
-### `components/Editor.tsx` — Rule editor (178 lines)
+### `components/Editor.tsx` — Rule editor (~195 lines)
 
 The JSON editing tab. Uses CodeMirror 6 (`@uiw/react-codemirror`) with JSON syntax highlighting.
 
-State is local: `name`, `description`, `type`, `status`, `treeJson`, `defaultJson`. When you select a different rule, `useEffect` resets all state from the new rule's data.
+State is local: `name`, `description`, `type`, `status`, `environment`, `activeFrom`, `activeUntil`, `treeJson`, `defaultJson`. When you select a different rule, `useEffect` resets all state from the new rule's data.
 
-Save flow: parse JSON → validate → call `api.updateRule()` → notify parent.
+New fields: environment dropdown (production/staging/development) and two datetime-local pickers for active_from and active_until. These control when a rule is active. Leave both empty for "always active."
+
+Save flow: parse JSON → validate → call `api.updateRule()` (now includes environment and schedule fields) → notify parent.
 
 Also has: export (opens download URL), duplicate (calls API), delete (with confirmation dialog).
 
@@ -104,10 +111,10 @@ The most complex frontend component. Uses ReactFlow (`@xyflow/react`) to render 
 
 JSON textarea for context input. "Evaluate" button calls `api.evaluate()`. Shows the result: value, default flag, elapsed time, and the decision path via `PathView`.
 
-### `components/HistoryView.tsx` — Version history (127 lines)
+### `components/HistoryView.tsx` — Version history (~130 lines)
 
 Two sub-tabs:
-1. **Versions** — lists all versions with rollback buttons. Clicking a version shows a DiffView comparing it to the current version
+1. **Versions** — lists all versions with rollback buttons. Each version shows "by {username}" when `modified_by` is present, so you can see who made each change. Clicking a version shows a DiffView comparing it to the current version
 2. **Evaluations** — recent evaluation history with context and result JSON
 
 ### `components/DiffView.tsx` — Version diff (72 lines)
@@ -123,6 +130,10 @@ Renders the `path` array from an EvalResult as colored steps. "→ true" steps a
 ### `components/WebhookManager.tsx` — Webhook admin (126 lines)
 
 Admin-only view. Create form with URL + events input. Table listing all webhooks with truncated secrets and delete buttons. Only visible to users with admin role.
+
+### `components/UserManager.tsx` — User admin (~115 lines)
+
+Admin-only view. Create user form with username/password/role fields. Table listing all users with color-coded role badges (red=admin, yellow=editor, blue=viewer) and creation dates. Accessible via the "Users" button in TopBar.
 
 ### `styles/global.css` — All styles (479 lines)
 

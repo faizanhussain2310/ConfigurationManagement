@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS rules (
     tree TEXT NOT NULL,
     default_value TEXT,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'draft', 'disabled')),
+    environment TEXT NOT NULL DEFAULT 'production',
+    active_from DATETIME,
+    active_until DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -24,6 +27,10 @@ CREATE TABLE IF NOT EXISTS rule_versions (
     tree TEXT NOT NULL,
     default_value TEXT,
     status TEXT NOT NULL,
+    environment TEXT NOT NULL DEFAULT 'production',
+    active_from DATETIME,
+    active_until DATETIME,
+    modified_by TEXT DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(rule_id, version)
 );
@@ -43,6 +50,7 @@ CREATE TABLE IF NOT EXISTS eval_history (
 
 CREATE INDEX IF NOT EXISTS idx_eval_history_rule_id ON eval_history(rule_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_rule_versions_rule_id ON rule_versions(rule_id, version DESC);
+CREATE INDEX IF NOT EXISTS idx_rules_environment ON rules(environment);
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

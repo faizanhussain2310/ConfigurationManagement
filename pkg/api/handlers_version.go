@@ -33,7 +33,7 @@ func (h *Handler) RollbackToVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rule, err := h.Store.RollbackToVersion(r.Context(), id, version)
+	rule, err := h.Store.RollbackToVersion(r.Context(), id, version, getUsername(r))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "rule or version not found")

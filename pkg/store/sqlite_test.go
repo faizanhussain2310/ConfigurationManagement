@@ -40,7 +40,7 @@ func TestCreateAndGetRule(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("test_flag", "Test Flag", "feature_flag")
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
@@ -67,11 +67,11 @@ func TestCreateRuleDuplicateID(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("dup", "First", "feature_flag")
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 	r2 := testRule("dup", "Second", "feature_flag")
-	if err := s.CreateRule(ctx, r2); err == nil {
+	if err := s.CreateRule(ctx, r2, "test"); err == nil {
 		t.Error("expected error for duplicate ID")
 	}
 }
@@ -86,13 +86,13 @@ func TestListRulesPagination(t *testing.T) {
 			"Rule "+string(rune('A'+i)),
 			"feature_flag",
 		)
-		if err := s.CreateRule(ctx, r); err != nil {
+		if err := s.CreateRule(ctx, r, "test"); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// Get first page
-	rules, total, err := s.ListRules(ctx, 2, 0)
+	rules, total, err := s.ListRules(ctx, 2, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestListRulesPagination(t *testing.T) {
 	}
 
 	// Get second page
-	rules, _, err = s.ListRules(ctx, 2, 2)
+	rules, _, err = s.ListRules(ctx, 2, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestListRulesPagination(t *testing.T) {
 	}
 
 	// Get last page
-	rules, _, err = s.ListRules(ctx, 2, 4)
+	rules, _, err = s.ListRules(ctx, 2, 4, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestListRulesEmpty(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 
-	rules, total, err := s.ListRules(ctx, 50, 0)
+	rules, total, err := s.ListRules(ctx, 50, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,13 +143,13 @@ func TestUpdateRuleCreatesNewVersion(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("update_me", "Original", "feature_flag")
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 
 	r.Name = "Updated"
 	r.Tree = json.RawMessage(`{"value": false}`)
-	if err := s.UpdateRule(ctx, r); err != nil {
+	if err := s.UpdateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -179,7 +179,7 @@ func TestDeleteRuleCascade(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("delete_me", "Delete Me", "feature_flag")
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -234,15 +234,15 @@ func TestVersionHistory(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("versioned", "V1", "decision_tree")
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 
 	// Update twice
 	r.Name = "V2"
-	s.UpdateRule(ctx, r)
+	s.UpdateRule(ctx, r, "test")
 	r.Name = "V3"
-	s.UpdateRule(ctx, r)
+	s.UpdateRule(ctx, r, "test")
 
 	versions, err := s.ListVersions(ctx, "versioned")
 	if err != nil {
@@ -266,14 +266,14 @@ func TestGetVersion(t *testing.T) {
 
 	r := testRule("snap", "Snap V1", "feature_flag")
 	r.Tree = json.RawMessage(`{"value": "original"}`)
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 
 	// Update
 	r.Name = "Snap V2"
 	r.Tree = json.RawMessage(`{"value": "updated"}`)
-	s.UpdateRule(ctx, r)
+	s.UpdateRule(ctx, r, "test")
 
 	// Get v1 snapshot
 	v1, err := s.GetVersion(ctx, "snap", 1)
@@ -294,17 +294,17 @@ func TestRollbackToVersion(t *testing.T) {
 
 	r := testRule("rollback_me", "Version 1", "feature_flag")
 	r.Tree = json.RawMessage(`{"value": "v1"}`)
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 
 	// Update to v2
 	r.Name = "Version 2"
 	r.Tree = json.RawMessage(`{"value": "v2"}`)
-	s.UpdateRule(ctx, r)
+	s.UpdateRule(ctx, r, "test")
 
 	// Rollback to v1 (creates v3)
-	rolled, err := s.RollbackToVersion(ctx, "rollback_me", 1)
+	rolled, err := s.RollbackToVersion(ctx, "rollback_me", 1, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,9 +333,9 @@ func TestRollbackNonexistentVersion(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("rb_err", "Test", "feature_flag")
-	s.CreateRule(ctx, r)
+	s.CreateRule(ctx, r, "test")
 
-	_, err := s.RollbackToVersion(ctx, "rb_err", 99)
+	_, err := s.RollbackToVersion(ctx, "rb_err", 99, "test")
 	if err == nil {
 		t.Error("expected error rolling back to nonexistent version")
 	}
@@ -348,11 +348,11 @@ func TestDuplicateRule(t *testing.T) {
 	r := testRule("original", "Original Rule", "decision_tree")
 	r.Description = "A test rule"
 	r.Tree = json.RawMessage(`{"value": "hello"}`)
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 
-	dup, err := s.DuplicateRule(ctx, "original", "original-copy")
+	dup, err := s.DuplicateRule(ctx, "original", "original-copy", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +383,7 @@ func TestDuplicateNonexistentRule(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 
-	_, err := s.DuplicateRule(ctx, "ghost", "ghost-copy")
+	_, err := s.DuplicateRule(ctx, "ghost", "ghost-copy", "test")
 	if err == nil {
 		t.Error("expected error duplicating nonexistent rule")
 	}
@@ -394,7 +394,7 @@ func TestEvalHistory(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("hist", "History Test", "feature_flag")
-	s.CreateRule(ctx, r)
+	s.CreateRule(ctx, r, "test")
 
 	// Insert some history
 	for i := 0; i < 5; i++ {
@@ -427,7 +427,7 @@ func TestEvalHistoryPagination(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("hist_page", "Pagination", "feature_flag")
-	s.CreateRule(ctx, r)
+	s.CreateRule(ctx, r, "test")
 
 	for i := 0; i < 10; i++ {
 		s.InsertEvalHistory(ctx, "hist_page",
@@ -495,7 +495,7 @@ func TestRuleExists(t *testing.T) {
 	}
 
 	r := testRule("yep", "Exists", "feature_flag")
-	s.CreateRule(ctx, r)
+	s.CreateRule(ctx, r, "test")
 
 	exists, err = s.RuleExists(ctx, "yep")
 	if err != nil {
@@ -511,7 +511,7 @@ func TestImportRuleNew(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("imported", "Imported Rule", "feature_flag")
-	if err := s.ImportRule(ctx, r, false); err != nil {
+	if err := s.ImportRule(ctx, r, false, "test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -529,10 +529,10 @@ func TestImportRuleConflict(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("conflict", "Original", "feature_flag")
-	s.CreateRule(ctx, r)
+	s.CreateRule(ctx, r, "test")
 
 	r2 := testRule("conflict", "Replacement", "feature_flag")
-	err := s.ImportRule(ctx, r2, false)
+	err := s.ImportRule(ctx, r2, false, "test")
 	if err == nil {
 		t.Error("expected conflict error")
 	}
@@ -543,12 +543,12 @@ func TestImportRuleForce(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("force_me", "Original", "feature_flag")
-	s.CreateRule(ctx, r)
+	s.CreateRule(ctx, r, "test")
 
 	r2 := testRule("force_me", "Forced Update", "feature_flag")
 	r2.Tree = json.RawMessage(`{"value": "new"}`)
 	r2.Status = "active"
-	if err := s.ImportRule(ctx, r2, true); err != nil {
+	if err := s.ImportRule(ctx, r2, true, "test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -572,7 +572,7 @@ func TestDefaultValueRoundTrip(t *testing.T) {
 		Tree:         json.RawMessage(`{"value": true}`),
 		DefaultValue: json.RawMessage(`"fallback"`),
 	}
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -590,7 +590,7 @@ func TestNullDefaultValue(t *testing.T) {
 	ctx := context.Background()
 
 	r := testRule("no_default", "No Default", "feature_flag")
-	s.CreateRule(ctx, r)
+	s.CreateRule(ctx, r, "test")
 
 	got, _ := s.GetRule(ctx, "no_default")
 	if got.DefaultValue != nil {
@@ -609,7 +609,7 @@ func TestTreeRoundTrip(t *testing.T) {
 		Type: "decision_tree",
 		Tree: json.RawMessage(tree),
 	}
-	if err := s.CreateRule(ctx, r); err != nil {
+	if err := s.CreateRule(ctx, r, "test"); err != nil {
 		t.Fatal(err)
 	}
 

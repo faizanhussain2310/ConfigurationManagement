@@ -5,9 +5,12 @@ import { useAuth } from '../hooks/useAuth'
 interface Props {
   onImport: () => void
   onWebhooks?: () => void
+  onUsers?: () => void
+  environment: string
+  onEnvironmentChange: (env: string) => void
 }
 
-export default function TopBar({ onImport, onWebhooks }: Props) {
+export default function TopBar({ onImport, onWebhooks, onUsers, environment, onEnvironmentChange }: Props) {
   const { username, role, logout } = useAuth()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -37,7 +40,20 @@ export default function TopBar({ onImport, onWebhooks }: Props) {
   return (
     <div className="topbar">
       <h1>Arbiter</h1>
+      <select
+        value={environment}
+        onChange={e => onEnvironmentChange(e.target.value)}
+        style={{ marginLeft: 12, fontSize: 12, padding: '4px 8px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-primary)' }}
+      >
+        <option value="">All Environments</option>
+        <option value="production">Production</option>
+        <option value="staging">Staging</option>
+        <option value="development">Development</option>
+      </select>
       <div style={{ flex: 1 }} />
+      {onUsers && (
+        <button onClick={onUsers}>Users</button>
+      )}
       {onWebhooks && (
         <button onClick={onWebhooks}>Webhooks</button>
       )}

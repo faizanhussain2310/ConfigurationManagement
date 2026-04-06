@@ -15,6 +15,7 @@ export default function RuleList({ rules, loading, selectedId, onSelect, onRefre
   const [newId, setNewId] = useState('')
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState<string>('feature_flag')
+  const [newEnv, setNewEnv] = useState<string>('production')
 
   const handleCreate = async () => {
     if (!newId.trim() || !newName.trim()) return
@@ -23,6 +24,7 @@ export default function RuleList({ rules, loading, selectedId, onSelect, onRefre
         id: newId.trim(),
         name: newName.trim(),
         type: newType as any,
+        environment: newEnv,
         tree: { value: newType === 'feature_flag' || newType === 'kill_switch' ? false : '' },
         status: 'draft',
       })
@@ -67,6 +69,14 @@ export default function RuleList({ rules, loading, selectedId, onSelect, onRefre
               <option value="kill_switch">Kill Switch</option>
             </select>
           </div>
+          <div className="form-group">
+            <label>Environment</label>
+            <select value={newEnv} onChange={e => setNewEnv(e.target.value)} style={{ width: '100%' }}>
+              <option value="production">Production</option>
+              <option value="staging">Staging</option>
+              <option value="development">Development</option>
+            </select>
+          </div>
           <button className="primary" onClick={handleCreate} style={{ width: '100%' }}>Create</button>
         </div>
       )}
@@ -81,6 +91,7 @@ export default function RuleList({ rules, loading, selectedId, onSelect, onRefre
           <div className="meta">
             <span className={`badge ${rule.type}`}>{rule.type.replace('_', ' ')}</span>
             <span className={`badge ${rule.status}`}>{rule.status}</span>
+            <span className="badge" style={{ background: 'rgba(88,166,255,0.1)', color: 'var(--accent)', fontSize: 10 }}>{rule.environment}</span>
             <span>v{rule.version}</span>
           </div>
         </div>

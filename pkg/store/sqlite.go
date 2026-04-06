@@ -73,7 +73,7 @@ func (s *Store) Close() error {
 // --- Rules CRUD ---
 
 // CreateRule inserts a new rule and its initial version (v1) atomically.
-func (s *Store) CreateRule(ctx context.Context, r *engine.Rule) error {
+func (s *Store) CreateRule(ctx context.Context, r *engine.Rule, modifiedBy string) error {
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -87,13 +87,17 @@ func (s *Store) CreateRule(ctx context.Context, r *engine.Rule) error {
 	if r.Status == "" {
 		r.Status = "active"
 	}
+	if r.Environment == "" {
+		r.Environment = "production"
+	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO rules (id, name, description, type, version, tree, default_value, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO rules (id, name, description, type, version, tree, default_value, status, environment, active_from, active_until, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.Name, r.Description, r.Type, r.Version,
 		string(r.Tree), nullableString(r.DefaultValue),
-		r.Status, now, now,
+		r.Status, r.Environment, nullableTime(r.ActiveFrom), nullableTime(r.ActiveUntil),
+		now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("insert rule: %w", err)
@@ -101,11 +105,12 @@ func (s *Store) CreateRule(ctx context.Context, r *engine.Rule) error {
 
 	// Insert initial version snapshot
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO rule_versions (rule_id, version, name, description, type, tree, default_value, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO rule_versions (rule_id, version, name, description, type, tree, default_value, status, environment, active_from, active_until, modified_by, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, 1, r.Name, r.Description, r.Type,
 		string(r.Tree), nullableString(r.DefaultValue),
-		r.Status, now,
+		r.Status, r.Environment, nullableTime(r.ActiveFrom), nullableTime(r.ActiveUntil),
+		modifiedBy, now,
 	)
 	if err != nil {
 		return fmt.Errorf("insert version: %w", err)
@@ -117,22 +122,34 @@ func (s *Store) CreateRule(ctx context.Context, r *engine.Rule) error {
 // GetRule fetches a single rule by ID.
 func (s *Store) GetRule(ctx context.Context, id string) (*engine.Rule, error) {
 	row := s.readDB.QueryRowContext(ctx,
-		`SELECT id, name, description, type, version, tree, default_value, status, created_at, updated_at
+		`SELECT id, name, description, type, version, tree, default_value, status, environment, active_from, active_until, created_at, updated_at
 		 FROM rules WHERE id = ?`, id)
 	return scanRule(row)
 }
 
-// ListRules returns paginated rules.
-func (s *Store) ListRules(ctx context.Context, limit, offset int) ([]*engine.Rule, int, error) {
+// ListRules returns paginated rules, optionally filtered by environment.
+func (s *Store) ListRules(ctx context.Context, limit, offset int, environment string) ([]*engine.Rule, int, error) {
 	var total int
-	err := s.readDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules`).Scan(&total)
+	var args []any
+
+	countQuery := `SELECT COUNT(*) FROM rules`
+	listQuery := `SELECT id, name, description, type, version, tree, default_value, status, environment, active_from, active_until, created_at, updated_at FROM rules`
+
+	if environment != "" {
+		countQuery += ` WHERE environment = ?`
+		listQuery += ` WHERE environment = ?`
+		args = append(args, environment)
+	}
+
+	err := s.readDB.QueryRowContext(ctx, countQuery, args...).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.readDB.QueryContext(ctx,
-		`SELECT id, name, description, type, version, tree, default_value, status, created_at, updated_at
-		 FROM rules ORDER BY updated_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	listQuery += ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`
+	listArgs := append(args, limit, offset)
+
+	rows, err := s.readDB.QueryContext(ctx, listQuery, listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -153,7 +170,7 @@ func (s *Store) ListRules(ctx context.Context, limit, offset int) ([]*engine.Rul
 }
 
 // UpdateRule updates a rule and creates a new version atomically.
-func (s *Store) UpdateRule(ctx context.Context, r *engine.Rule) error {
+func (s *Store) UpdateRule(ctx context.Context, r *engine.Rule, modifiedBy string) error {
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -170,23 +187,29 @@ func (s *Store) UpdateRule(ctx context.Context, r *engine.Rule) error {
 	newVersion := currentVersion + 1
 	now := time.Now().UTC()
 
+	if r.Environment == "" {
+		r.Environment = "production"
+	}
+
 	_, err = tx.ExecContext(ctx,
-		`UPDATE rules SET name=?, description=?, type=?, version=?, tree=?, default_value=?, status=?, updated_at=?
+		`UPDATE rules SET name=?, description=?, type=?, version=?, tree=?, default_value=?, status=?, environment=?, active_from=?, active_until=?, updated_at=?
 		 WHERE id=?`,
 		r.Name, r.Description, r.Type, newVersion,
 		string(r.Tree), nullableString(r.DefaultValue),
-		r.Status, now, r.ID,
+		r.Status, r.Environment, nullableTime(r.ActiveFrom), nullableTime(r.ActiveUntil),
+		now, r.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update rule: %w", err)
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO rule_versions (rule_id, version, name, description, type, tree, default_value, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO rule_versions (rule_id, version, name, description, type, tree, default_value, status, environment, active_from, active_until, modified_by, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, newVersion, r.Name, r.Description, r.Type,
 		string(r.Tree), nullableString(r.DefaultValue),
-		r.Status, now,
+		r.Status, r.Environment, nullableTime(r.ActiveFrom), nullableTime(r.ActiveUntil),
+		modifiedBy, now,
 	)
 	if err != nil {
 		return fmt.Errorf("insert version: %w", err)
@@ -217,7 +240,7 @@ func (s *Store) DeleteRule(ctx context.Context, id string) error {
 // ListVersions returns version summaries for a rule.
 func (s *Store) ListVersions(ctx context.Context, ruleID string) ([]engine.RuleVersionSummary, error) {
 	rows, err := s.readDB.QueryContext(ctx,
-		`SELECT version, name, status, created_at FROM rule_versions
+		`SELECT version, name, status, modified_by, created_at FROM rule_versions
 		 WHERE rule_id = ? ORDER BY version DESC`, ruleID)
 	if err != nil {
 		return nil, err
@@ -227,7 +250,7 @@ func (s *Store) ListVersions(ctx context.Context, ruleID string) ([]engine.RuleV
 	var versions []engine.RuleVersionSummary
 	for rows.Next() {
 		var v engine.RuleVersionSummary
-		if err := rows.Scan(&v.Version, &v.Name, &v.Status, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.Version, &v.Name, &v.Status, &v.ModifiedBy, &v.CreatedAt); err != nil {
 			return nil, err
 		}
 		versions = append(versions, v)
@@ -241,14 +264,16 @@ func (s *Store) ListVersions(ctx context.Context, ruleID string) ([]engine.RuleV
 // GetVersion returns a full version snapshot.
 func (s *Store) GetVersion(ctx context.Context, ruleID string, version int) (*engine.RuleVersion, error) {
 	row := s.readDB.QueryRowContext(ctx,
-		`SELECT id, rule_id, version, name, description, type, tree, default_value, status, created_at
+		`SELECT id, rule_id, version, name, description, type, tree, default_value, status, environment, active_from, active_until, modified_by, created_at
 		 FROM rule_versions WHERE rule_id = ? AND version = ?`, ruleID, version)
 
 	var v engine.RuleVersion
 	var treeStr string
-	var defVal sql.NullString
+	var defVal, modBy sql.NullString
+	var activeFrom, activeUntil sql.NullTime
 	err := row.Scan(&v.ID, &v.RuleID, &v.Version, &v.Name, &v.Description,
-		&v.Type, &treeStr, &defVal, &v.Status, &v.CreatedAt)
+		&v.Type, &treeStr, &defVal, &v.Status, &v.Environment,
+		&activeFrom, &activeUntil, &modBy, &v.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -256,11 +281,20 @@ func (s *Store) GetVersion(ctx context.Context, ruleID string, version int) (*en
 	if defVal.Valid {
 		v.DefaultValue = json.RawMessage(defVal.String)
 	}
+	if activeFrom.Valid {
+		v.ActiveFrom = &activeFrom.Time
+	}
+	if activeUntil.Valid {
+		v.ActiveUntil = &activeUntil.Time
+	}
+	if modBy.Valid {
+		v.ModifiedBy = modBy.String
+	}
 	return &v, nil
 }
 
 // RollbackToVersion copies a version snapshot into the rules table as a new version.
-func (s *Store) RollbackToVersion(ctx context.Context, ruleID string, targetVersion int) (*engine.Rule, error) {
+func (s *Store) RollbackToVersion(ctx context.Context, ruleID string, targetVersion int, modifiedBy string) (*engine.Rule, error) {
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -268,12 +302,13 @@ func (s *Store) RollbackToVersion(ctx context.Context, ruleID string, targetVers
 	defer tx.Rollback()
 
 	// Get the target version snapshot
-	var name, description, ruleType, tree, status string
+	var name, description, ruleType, tree, status, environment string
 	var defVal sql.NullString
+	var activeFrom, activeUntil sql.NullTime
 	err = tx.QueryRowContext(ctx,
-		`SELECT name, description, type, tree, default_value, status
+		`SELECT name, description, type, tree, default_value, status, environment, active_from, active_until
 		 FROM rule_versions WHERE rule_id = ? AND version = ?`,
-		ruleID, targetVersion).Scan(&name, &description, &ruleType, &tree, &defVal, &status)
+		ruleID, targetVersion).Scan(&name, &description, &ruleType, &tree, &defVal, &status, &environment, &activeFrom, &activeUntil)
 	if err != nil {
 		return nil, fmt.Errorf("version %d not found: %w", targetVersion, err)
 	}
@@ -290,9 +325,9 @@ func (s *Store) RollbackToVersion(ctx context.Context, ruleID string, targetVers
 
 	// Update rules table
 	_, err = tx.ExecContext(ctx,
-		`UPDATE rules SET name=?, description=?, type=?, version=?, tree=?, default_value=?, status=?, updated_at=?
+		`UPDATE rules SET name=?, description=?, type=?, version=?, tree=?, default_value=?, status=?, environment=?, active_from=?, active_until=?, updated_at=?
 		 WHERE id=?`,
-		name, description, ruleType, newVersion, tree, defVal, status, now, ruleID,
+		name, description, ruleType, newVersion, tree, defVal, status, environment, activeFrom, activeUntil, now, ruleID,
 	)
 	if err != nil {
 		return nil, err
@@ -300,9 +335,9 @@ func (s *Store) RollbackToVersion(ctx context.Context, ruleID string, targetVers
 
 	// Insert new version entry
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO rule_versions (rule_id, version, name, description, type, tree, default_value, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ruleID, newVersion, name, description, ruleType, tree, defVal, status, now,
+		`INSERT INTO rule_versions (rule_id, version, name, description, type, tree, default_value, status, environment, active_from, active_until, modified_by, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ruleID, newVersion, name, description, ruleType, tree, defVal, status, environment, activeFrom, activeUntil, modifiedBy, now,
 	)
 	if err != nil {
 		return nil, err
@@ -317,7 +352,7 @@ func (s *Store) RollbackToVersion(ctx context.Context, ruleID string, targetVers
 		defaultValue = json.RawMessage(defVal.String)
 	}
 
-	return &engine.Rule{
+	rule := &engine.Rule{
 		ID:           ruleID,
 		Name:         name,
 		Description:  description,
@@ -326,12 +361,20 @@ func (s *Store) RollbackToVersion(ctx context.Context, ruleID string, targetVers
 		Tree:         json.RawMessage(tree),
 		DefaultValue: defaultValue,
 		Status:       status,
+		Environment:  environment,
 		UpdatedAt:    now,
-	}, nil
+	}
+	if activeFrom.Valid {
+		rule.ActiveFrom = &activeFrom.Time
+	}
+	if activeUntil.Valid {
+		rule.ActiveUntil = &activeUntil.Time
+	}
+	return rule, nil
 }
 
 // DuplicateRule creates a copy of a rule with a new ID.
-func (s *Store) DuplicateRule(ctx context.Context, sourceID, newID string) (*engine.Rule, error) {
+func (s *Store) DuplicateRule(ctx context.Context, sourceID, newID, modifiedBy string) (*engine.Rule, error) {
 	tx, err := s.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -339,11 +382,12 @@ func (s *Store) DuplicateRule(ctx context.Context, sourceID, newID string) (*eng
 	defer tx.Rollback()
 
 	// Read source rule
-	var name, description, ruleType, tree, status string
+	var name, description, ruleType, tree, status, environment string
 	var defVal sql.NullString
+	var activeFrom, activeUntil sql.NullTime
 	err = tx.QueryRowContext(ctx,
-		`SELECT name, description, type, tree, default_value, status FROM rules WHERE id = ?`,
-		sourceID).Scan(&name, &description, &ruleType, &tree, &defVal, &status)
+		`SELECT name, description, type, tree, default_value, status, environment, active_from, active_until FROM rules WHERE id = ?`,
+		sourceID).Scan(&name, &description, &ruleType, &tree, &defVal, &status, &environment, &activeFrom, &activeUntil)
 	if err != nil {
 		return nil, fmt.Errorf("source rule not found: %w", err)
 	}
@@ -352,18 +396,18 @@ func (s *Store) DuplicateRule(ctx context.Context, sourceID, newID string) (*eng
 	newName := name + "-copy"
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO rules (id, name, description, type, version, tree, default_value, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
-		newID, newName, description, ruleType, tree, defVal, status, now, now,
+		`INSERT INTO rules (id, name, description, type, version, tree, default_value, status, environment, active_from, active_until, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		newID, newName, description, ruleType, tree, defVal, status, environment, activeFrom, activeUntil, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert duplicate: %w", err)
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO rule_versions (rule_id, version, name, description, type, tree, default_value, status, created_at)
-		 VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)`,
-		newID, newName, description, ruleType, tree, defVal, status, now,
+		`INSERT INTO rule_versions (rule_id, version, name, description, type, tree, default_value, status, environment, active_from, active_until, modified_by, created_at)
+		 VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		newID, newName, description, ruleType, tree, defVal, status, environment, activeFrom, activeUntil, modifiedBy, now,
 	)
 	if err != nil {
 		return nil, err
@@ -378,18 +422,26 @@ func (s *Store) DuplicateRule(ctx context.Context, sourceID, newID string) (*eng
 		defaultValue = json.RawMessage(defVal.String)
 	}
 
-	return &engine.Rule{
-		ID:           newID,
-		Name:         newName,
-		Description:  description,
-		Type:         ruleType,
-		Version:      1,
-		Tree:         json.RawMessage(tree),
+	rule := &engine.Rule{
+		ID:          newID,
+		Name:        newName,
+		Description: description,
+		Type:        ruleType,
+		Version:     1,
+		Tree:        json.RawMessage(tree),
 		DefaultValue: defaultValue,
-		Status:       status,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}, nil
+		Status:      status,
+		Environment: environment,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if activeFrom.Valid {
+		rule.ActiveFrom = &activeFrom.Time
+	}
+	if activeUntil.Valid {
+		rule.ActiveUntil = &activeUntil.Time
+	}
+	return rule, nil
 }
 
 // --- Eval History ---
@@ -485,7 +537,7 @@ func (s *Store) RuleExists(ctx context.Context, id string) (bool, error) {
 // --- Import Support ---
 
 // ImportRule creates or force-replaces a rule from imported JSON.
-func (s *Store) ImportRule(ctx context.Context, r *engine.Rule, force bool) error {
+func (s *Store) ImportRule(ctx context.Context, r *engine.Rule, force bool, modifiedBy string) error {
 	exists, err := s.RuleExists(ctx, r.ID)
 	if err != nil {
 		return err
@@ -496,10 +548,10 @@ func (s *Store) ImportRule(ctx context.Context, r *engine.Rule, force bool) erro
 	}
 
 	if exists && force {
-		return s.UpdateRule(ctx, r)
+		return s.UpdateRule(ctx, r, modifiedBy)
 	}
 
-	return s.CreateRule(ctx, r)
+	return s.CreateRule(ctx, r, modifiedBy)
 }
 
 // --- Helpers ---
@@ -508,14 +560,22 @@ func scanRule(row *sql.Row) (*engine.Rule, error) {
 	var r engine.Rule
 	var treeStr string
 	var defVal sql.NullString
+	var activeFrom, activeUntil sql.NullTime
 	err := row.Scan(&r.ID, &r.Name, &r.Description, &r.Type, &r.Version,
-		&treeStr, &defVal, &r.Status, &r.CreatedAt, &r.UpdatedAt)
+		&treeStr, &defVal, &r.Status, &r.Environment,
+		&activeFrom, &activeUntil, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	r.Tree = json.RawMessage(treeStr)
 	if defVal.Valid {
 		r.DefaultValue = json.RawMessage(defVal.String)
+	}
+	if activeFrom.Valid {
+		r.ActiveFrom = &activeFrom.Time
+	}
+	if activeUntil.Valid {
+		r.ActiveUntil = &activeUntil.Time
 	}
 	return &r, nil
 }
@@ -524,14 +584,22 @@ func scanRuleRows(rows *sql.Rows) (*engine.Rule, error) {
 	var r engine.Rule
 	var treeStr string
 	var defVal sql.NullString
+	var activeFrom, activeUntil sql.NullTime
 	err := rows.Scan(&r.ID, &r.Name, &r.Description, &r.Type, &r.Version,
-		&treeStr, &defVal, &r.Status, &r.CreatedAt, &r.UpdatedAt)
+		&treeStr, &defVal, &r.Status, &r.Environment,
+		&activeFrom, &activeUntil, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	r.Tree = json.RawMessage(treeStr)
 	if defVal.Valid {
 		r.DefaultValue = json.RawMessage(defVal.String)
+	}
+	if activeFrom.Valid {
+		r.ActiveFrom = &activeFrom.Time
+	}
+	if activeUntil.Valid {
+		r.ActiveUntil = &activeUntil.Time
 	}
 	return &r, nil
 }
@@ -541,4 +609,11 @@ func nullableString(data json.RawMessage) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: string(data), Valid: true}
+}
+
+func nullableTime(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *t, Valid: true}
 }

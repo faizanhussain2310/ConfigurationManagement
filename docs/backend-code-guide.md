@@ -28,7 +28,9 @@ The key insight: **layers never reach upward**. Engine doesn't know about Store.
 This defines every data structure the system uses. Start here because every other file refers to these types.
 
 Pay attention to:
-- `Rule` struct — the main entity. `Tree` is `json.RawMessage` (raw JSON bytes, not parsed yet)
+- `Rule` struct — the main entity. `Tree` is `json.RawMessage` (raw JSON bytes, not parsed yet). Has `Environment` (production/staging/development), `ActiveFrom`/`ActiveUntil` (`*time.Time`, nullable) for scheduled activation
+- `IsScheduleActive()` method on Rule — checks current UTC time against the activation window. Returns true if no schedule is set (both nil)
+- `RuleVersion` and `RuleVersionSummary` — now include `ModifiedBy` for audit tracking
 - `Node` struct — a decision tree node. Either a leaf (has `Value`) or a branch (has `Condition` + `Then` + `Else`)
 - `Condition` struct — either a single comparison (`field`, `op`, `value`) or a logical group (`combinator` + `conditions`)
 - The custom `UnmarshalJSON` on Node (lines 78-122). This is the trickiest part. Go's `omitempty` drops `false`, `0`, and `""` during marshaling, but we need to preserve them as valid leaf values. The custom unmarshaler uses a `HasValue` bool to track whether `"value"` was explicitly present in the JSON
@@ -85,7 +87,9 @@ Composite rules reference other rules by ID and combine their results.
 
 Schema definition. 6 tables. Read this to understand the data model before looking at queries.
 
-**Read: `pkg/store/sqlite.go` (544 lines)**
+Key columns added in v3: `environment` (TEXT, defaults to 'production'), `active_from`/`active_until` (DATETIME, nullable) on both `rules` and `rule_versions`. `modified_by` (TEXT) on `rule_versions` for audit tracking.
+
+**Read: `pkg/store/sqlite.go` (~600 lines)**
 
 The biggest file. This is the database layer.
 
@@ -95,6 +99,9 @@ Key patterns:
 - **Automatic versioning** — every `UpdateRule()` call inserts a new row in `rule_versions` and bumps the version number. The old state is never lost
 - **History pruning** — `InsertEvalHistory()` uses an atomic counter (`pruneCounters` map). Every 100 inserts, it deletes old entries beyond the 1000 limit. This avoids running a COUNT query on every insert
 - **Rollback** — `RollbackToVersion()` doesn't delete anything. It copies the old version's data into the current rule and creates a new version. So "rollback to v1" when you're at v3 creates v4 with v1's content
+- **Environment filtering** — `ListRules()` conditionally appends `WHERE environment = ?` when a non-empty environment string is passed. This keeps the default behavior (no filter) backward-compatible
+- **Nullable time scanning** — Uses `sql.NullTime` for `active_from`/`active_until` columns. The `nullableTime()` helper converts `*time.Time` to `sql.NullTime` for inserts
+- **Audit trail** — `modifiedBy` parameter flows through CreateRule, UpdateRule, RollbackToVersion, DuplicateRule, ImportRule and gets stored in `rule_versions.modified_by`
 
 **Read: `pkg/store/seeds.go` (143 lines)**
 
@@ -138,9 +145,13 @@ Admin routes: register user, list users, webhook CRUD
 
 The meat of the API. Most handlers follow the same pattern: parse input → validate → call store → return JSON.
 
-The interesting handler is `evaluateComposite()` (line 288). Composite evaluation happens here (not in the engine package) because it needs to fetch child rules from the store. The engine package stays pure... it only evaluates trees, never touches the database.
+The interesting handler is `evaluateComposite()`. Composite evaluation happens here (not in the engine package) because it needs to fetch child rules from the store. The engine package stays pure... it only evaluates trees, never touches the database.
 
-`BatchEvaluate()` (line 232) uses a worker pool with a semaphore channel (`sem := make(chan struct{}, 10)`) to limit concurrency to 10 goroutines.
+`BatchEvaluate()` uses a worker pool with a semaphore channel (`sem := make(chan struct{}, 10)`) to limit concurrency to 10 goroutines.
+
+`EvaluateRule()` and `BatchEvaluate()` both check `rule.IsScheduleActive()` before evaluation. If the rule is outside its activation window, the handler returns the default value with path `["rule outside scheduled activation window"]` instead of running the tree evaluation. This means schedule enforcement happens at the HTTP layer, not in the engine.
+
+`getUsername(r)` is a small helper that extracts the username from JWT claims on the request context. Used by every mutating handler to pass `modifiedBy` to the store.
 
 **Read: `pkg/api/handlers_auth.go` (104 lines) and `pkg/api/handlers_webhook.go` (72 lines)**
 

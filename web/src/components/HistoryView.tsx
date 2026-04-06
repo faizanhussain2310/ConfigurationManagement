@@ -70,6 +70,11 @@ export default function HistoryView({ rule, onRollback }: Props) {
                     {v.name}
                   </span>
                   <span className={`badge ${v.status}`} style={{ marginLeft: 8 }}>{v.status}</span>
+                  {v.modified_by && (
+                    <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontSize: 11 }}>
+                      by {v.modified_by}
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>

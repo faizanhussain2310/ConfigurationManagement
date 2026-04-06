@@ -32,7 +32,7 @@ func (h *Handler) DuplicateRule(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rule, err := h.Store.DuplicateRule(r.Context(), id, newID)
+	rule, err := h.Store.DuplicateRule(r.Context(), id, newID, getUsername(r))
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

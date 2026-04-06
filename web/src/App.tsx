@@ -10,15 +10,18 @@ import TestPanel from './components/TestPanel'
 import TreeEditor from './components/TreeEditor'
 import HistoryView from './components/HistoryView'
 import WebhookManager from './components/WebhookManager'
+import UserManager from './components/UserManager'
 
 type Tab = 'editor' | 'test' | 'visual' | 'history'
+type AdminView = 'webhooks' | 'users' | null
 
 function Dashboard() {
   const { role } = useAuth()
-  const { rules, loading, refresh } = useRules()
+  const [environment, setEnvironment] = useState('')
+  const { rules, loading, refresh } = useRules(environment)
   const [selectedRule, setSelectedRule] = useState<Rule | null>(null)
   const [tab, setTab] = useState<Tab>('editor')
-  const [showWebhooks, setShowWebhooks] = useState(false)
+  const [adminView, setAdminView] = useState<AdminView>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
@@ -29,7 +32,7 @@ function Dashboard() {
   const handleSelect = useCallback((rule: Rule) => {
     setSelectedRule(rule)
     setTab('editor')
-    setShowWebhooks(false)
+    setAdminView(null)
   }, [])
 
   const handleRuleChange = useCallback(() => {
@@ -40,7 +43,10 @@ function Dashboard() {
     <div className="layout">
       <TopBar
         onImport={() => { refresh(); showToast('Rule imported') }}
-        onWebhooks={role === 'admin' ? () => { setShowWebhooks(true); setSelectedRule(null) } : undefined}
+        onWebhooks={role === 'admin' ? () => { setAdminView('webhooks'); setSelectedRule(null) } : undefined}
+        onUsers={role === 'admin' ? () => { setAdminView('users'); setSelectedRule(null) } : undefined}
+        environment={environment}
+        onEnvironmentChange={setEnvironment}
       />
       <div className="sidebar">
         <RuleList
@@ -53,8 +59,10 @@ function Dashboard() {
         />
       </div>
       <div className="main">
-        {showWebhooks ? (
+        {adminView === 'webhooks' ? (
           <WebhookManager showToast={showToast} />
+        ) : adminView === 'users' ? (
+          <UserManager showToast={showToast} />
         ) : selectedRule ? (
           <>
             <div className="tabs">

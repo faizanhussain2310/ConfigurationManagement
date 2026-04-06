@@ -2,6 +2,27 @@
 
 All notable changes to Arbiter are documented in this file.
 
+## [3.0.0] - 2026-03-31
+
+### Added
+- **Environment/Namespace Support**: Rules now have an `environment` field (production/staging/development). Filter rules by environment in the sidebar dropdown and via `?environment=` query param on the API
+- **Scheduled Activation**: Rules support `active_from` and `active_until` datetime fields. Rules outside their schedule window return their default value automatically. Datetime pickers in the editor UI
+- **Audit Log**: Every rule version now tracks `modified_by` (the username of who made the change). Displayed in the version history with "by username" labels
+- **User Management UI**: Admin-only user management panel. Create new users with username/password/role, view all users in a table with role badges and creation dates
+- Environment selector in TopBar filters the rule list across the whole dashboard
+- Environment badge shown on each rule in the sidebar
+- RuleList create form now includes environment picker
+- "Users" button in TopBar for admin users
+
+### Changed
+- Store method signatures updated: CreateRule, UpdateRule, RollbackToVersion, DuplicateRule, ImportRule now accept `modifiedBy` parameter
+- ListRules accepts optional `environment` filter
+- Evaluation handler checks `IsScheduleActive()` before running evaluation, returns default value with schedule-aware error path
+- BatchEvaluate and composite evaluation also check per-rule schedules
+- `useRules` hook accepts optional environment parameter
+- TopBar accepts environment filter props
+- Rule versions table includes modified_by, environment, active_from, active_until columns
+
 ## [2.0.0] - 2026-03-31
 
 ### Added

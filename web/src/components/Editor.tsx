@@ -15,6 +15,9 @@ export default function Editor({ rule, onSave, onDelete, showToast }: Props) {
   const [description, setDescription] = useState(rule.description)
   const [type, setType] = useState(rule.type)
   const [status, setStatus] = useState(rule.status)
+  const [environment, setEnvironment] = useState(rule.environment || 'production')
+  const [activeFrom, setActiveFrom] = useState(rule.active_from || '')
+  const [activeUntil, setActiveUntil] = useState(rule.active_until || '')
   const [treeJson, setTreeJson] = useState(JSON.stringify(rule.tree, null, 2))
   const [defaultJson, setDefaultJson] = useState(
     rule.default_value != null ? JSON.stringify(rule.default_value, null, 2) : ''
@@ -27,6 +30,9 @@ export default function Editor({ rule, onSave, onDelete, showToast }: Props) {
     setDescription(rule.description)
     setType(rule.type)
     setStatus(rule.status)
+    setEnvironment(rule.environment || 'production')
+    setActiveFrom(rule.active_from || '')
+    setActiveUntil(rule.active_until || '')
     setTreeJson(JSON.stringify(rule.tree, null, 2))
     setDefaultJson(rule.default_value != null ? JSON.stringify(rule.default_value, null, 2) : '')
     setJsonError(null)
@@ -59,8 +65,11 @@ export default function Editor({ rule, onSave, onDelete, showToast }: Props) {
         description,
         type: type as any,
         status: status as any,
+        environment,
         tree,
         default_value: defaultValue,
+        active_from: activeFrom || null,
+        active_until: activeUntil || null,
       })
       onSave(updated)
     } catch (err: any) {
@@ -128,10 +137,38 @@ export default function Editor({ rule, onSave, onDelete, showToast }: Props) {
               <option value="disabled">Disabled</option>
             </select>
           </div>
+          <div className="form-group">
+            <label>Environment</label>
+            <select value={environment} onChange={e => setEnvironment(e.target.value)} style={{ width: '100%' }}>
+              <option value="production">Production</option>
+              <option value="staging">Staging</option>
+              <option value="development">Development</option>
+            </select>
+          </div>
         </div>
         <div className="form-group">
           <label>Description</label>
           <input value={description} onChange={e => setDescription(e.target.value)} style={{ width: '100%' }} />
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Active From (optional)</label>
+            <input
+              type="datetime-local"
+              value={activeFrom ? activeFrom.slice(0, 16) : ''}
+              onChange={e => setActiveFrom(e.target.value ? new Date(e.target.value).toISOString() : '')}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div className="form-group">
+            <label>Active Until (optional)</label>
+            <input
+              type="datetime-local"
+              value={activeUntil ? activeUntil.slice(0, 16) : ''}
+              onChange={e => setActiveUntil(e.target.value ? new Date(e.target.value).toISOString() : '')}
+              style={{ width: '100%' }}
+            />
+          </div>
         </div>
       </div>
 

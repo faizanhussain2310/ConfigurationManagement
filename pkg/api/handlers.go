@@ -52,6 +52,14 @@ func parsePagination(r *http.Request, defaultLimit, maxLimit int) (int, int) {
 	return limit, offset
 }
 
+func getUsername(r *http.Request) string {
+	claims := GetClaims(r)
+	if claims != nil {
+		return claims.Username
+	}
+	return ""
+}
+
 // --- Core Rule Handlers ---
 
 // HealthCheck returns server status.
@@ -83,7 +91,7 @@ func (h *Handler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.CreateRule(r.Context(), &rule); err != nil {
+	if err := h.Store.CreateRule(r.Context(), &rule, getUsername(r)); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -98,8 +106,9 @@ func (h *Handler) CreateRule(w http.ResponseWriter, r *http.Request) {
 // ListRules handles GET /api/rules.
 func (h *Handler) ListRules(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r, 50, 100)
+	environment := r.URL.Query().Get("environment")
 
-	rules, total, err := h.Store.ListRules(r.Context(), limit, offset)
+	rules, total, err := h.Store.ListRules(r.Context(), limit, offset, environment)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -144,7 +153,7 @@ func (h *Handler) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.UpdateRule(r.Context(), &rule); err != nil {
+	if err := h.Store.UpdateRule(r.Context(), &rule, getUsername(r)); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "rule not found")
 			return
@@ -201,6 +210,25 @@ func (h *Handler) EvaluateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check schedule
+	if !rule.IsScheduleActive() {
+		result := engine.EvalResult{
+			Value:   nil,
+			Path:    []string{"rule outside scheduled activation window"},
+			Default: true,
+			Elapsed: "0s",
+		}
+		// Use default value if available
+		if rule.DefaultValue != nil {
+			var defVal any
+			if err := json.Unmarshal(rule.DefaultValue, &defVal); err == nil {
+				result.Value = defVal
+			}
+		}
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
 	var body struct {
 		Context map[string]any `json:"context"`
 	}
@@ -249,7 +277,6 @@ func (h *Handler) BatchEvaluate(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]batchResult, len(body.RuleIDs))
 
-	// Use errgroup with worker pool for parallel evaluation
 	type indexedResult struct {
 		idx    int
 		result batchResult
@@ -267,6 +294,19 @@ func (h *Handler) BatchEvaluate(w http.ResponseWriter, r *http.Request) {
 				ch <- indexedResult{idx, batchResult{
 					RuleID: ruleID,
 					Result: engine.EvalResult{Error: "rule not found", Path: []string{}},
+				}}
+				return
+			}
+
+			// Check schedule
+			if !rule.IsScheduleActive() {
+				ch <- indexedResult{idx, batchResult{
+					RuleID: ruleID,
+					Result: engine.EvalResult{
+						Path:    []string{"rule outside scheduled activation window"},
+						Default: true,
+						Elapsed: "0s",
+					},
 				}}
 				return
 			}
@@ -309,6 +349,19 @@ func (h *Handler) evaluateComposite(w http.ResponseWriter, r *http.Request, rule
 			children = append(children, engine.CompositeChild{
 				RuleID: childID,
 				Result: engine.EvalResult{Error: "nested composite rules not supported", Path: []string{}},
+			})
+			continue
+		}
+
+		// Check child schedule
+		if !child.IsScheduleActive() {
+			children = append(children, engine.CompositeChild{
+				RuleID: childID,
+				Result: engine.EvalResult{
+					Path:    []string{"child rule outside scheduled activation window"},
+					Default: true,
+					Elapsed: "0s",
+				},
 			})
 			continue
 		}

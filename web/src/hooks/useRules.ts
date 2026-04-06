@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api, Rule } from '../api/client'
 
-export function useRules() {
+export function useRules(environment = '') {
   const [rules, setRules] = useState<Rule[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -9,7 +9,7 @@ export function useRules() {
   const fetchRules = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await api.listRules()
+      const data = await api.listRules(50, 0, environment)
       setRules(data.rules)
       setError(null)
     } catch (err: any) {
@@ -17,7 +17,7 @@ export function useRules() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [environment])
 
   useEffect(() => {
     fetchRules()

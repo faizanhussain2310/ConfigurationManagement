@@ -24,6 +24,9 @@ export interface Rule {
   tree: any
   default_value?: any
   status: 'active' | 'draft' | 'disabled'
+  environment: string
+  active_from?: string | null
+  active_until?: string | null
   created_at: string
   updated_at: string
 }
@@ -40,6 +43,7 @@ export interface VersionSummary {
   version: number
   name: string
   status: string
+  modified_by: string
   created_at: string
 }
 
@@ -107,8 +111,11 @@ export const api = {
   // Rules
   health: () => request<{ status: string }>('/health'),
 
-  listRules: (limit = 50, offset = 0) =>
-    request<{ rules: Rule[]; total: number }>(`/rules?limit=${limit}&offset=${offset}`),
+  listRules: (limit = 50, offset = 0, environment = '') => {
+    let url = `/rules?limit=${limit}&offset=${offset}`
+    if (environment) url += `&environment=${environment}`
+    return request<{ rules: Rule[]; total: number }>(url)
+  },
 
   getRule: (id: string) => request<Rule>(`/rules/${id}`),
 

@@ -41,7 +41,7 @@ func (s *Store) Seed(ctx context.Context) error {
 	log.Println("Seeding database with example rules...")
 
 	for _, r := range seedRules() {
-		if err := s.CreateRule(ctx, r); err != nil {
+		if err := s.CreateRule(ctx, r, "system"); err != nil {
 			return err
 		}
 	}

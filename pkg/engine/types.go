@@ -11,13 +11,29 @@ type Rule struct {
 	ID           string          `json:"id"`
 	Name         string          `json:"name"`
 	Description  string          `json:"description"`
-	Type         string          `json:"type"` // feature_flag, decision_tree, kill_switch
+	Type         string          `json:"type"` // feature_flag, decision_tree, kill_switch, composite
 	Version      int             `json:"version"`
 	Tree         json.RawMessage `json:"tree"`
 	DefaultValue json.RawMessage `json:"default_value,omitempty"`
-	Status       string          `json:"status"` // active, draft, disabled
+	Status       string          `json:"status"`      // active, draft, disabled
+	Environment  string          `json:"environment"`  // production, staging, development
+	ActiveFrom   *time.Time      `json:"active_from,omitempty"`
+	ActiveUntil  *time.Time      `json:"active_until,omitempty"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
+}
+
+// IsScheduleActive checks if the rule is within its scheduled activation window.
+// Returns true if no schedule is set (always active) or current time is within the window.
+func (r *Rule) IsScheduleActive() bool {
+	now := time.Now().UTC()
+	if r.ActiveFrom != nil && now.Before(*r.ActiveFrom) {
+		return false
+	}
+	if r.ActiveUntil != nil && now.After(*r.ActiveUntil) {
+		return false
+	}
+	return true
 }
 
 // RuleVersion is an immutable snapshot of a rule at a specific version.
@@ -31,15 +47,20 @@ type RuleVersion struct {
 	Tree         json.RawMessage `json:"tree"`
 	DefaultValue json.RawMessage `json:"default_value,omitempty"`
 	Status       string          `json:"status"`
+	Environment  string          `json:"environment"`
+	ActiveFrom   *time.Time      `json:"active_from,omitempty"`
+	ActiveUntil  *time.Time      `json:"active_until,omitempty"`
+	ModifiedBy   string          `json:"modified_by"`
 	CreatedAt    time.Time       `json:"created_at"`
 }
 
 // RuleVersionSummary is the lightweight version returned by GET /versions.
 type RuleVersionSummary struct {
-	Version   int       `json:"version"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	Version    int       `json:"version"`
+	Name       string    `json:"name"`
+	Status     string    `json:"status"`
+	ModifiedBy string    `json:"modified_by"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Condition is either a single field comparison OR a logical group.

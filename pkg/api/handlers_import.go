@@ -39,7 +39,7 @@ func (h *Handler) ImportRule(w http.ResponseWriter, r *http.Request) {
 
 	force := strings.ToLower(r.URL.Query().Get("force")) == "true"
 
-	if err := h.Store.ImportRule(r.Context(), &rule, force); err != nil {
+	if err := h.Store.ImportRule(r.Context(), &rule, force, getUsername(r)); err != nil {
 		if strings.Contains(err.Error(), "conflict") {
 			existing, _ := h.Store.GetRule(r.Context(), rule.ID)
 			writeJSON(w, http.StatusConflict, map[string]any{
